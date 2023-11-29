@@ -62,7 +62,7 @@ class BaseEnv(gym.Env):
         super().__init__()
 
         self.__trajectory_files = [os.path.join(path_to_trajectories, file) for file in os.listdir(path_to_trajectories)]
-        assert(len(self.__trajectory_files) > 0, f"make sure there exists files in {path_to_trajectories}")
+        # assert(len(self.__trajectory_files) > 0, f"make sure there exists files in {path_to_trajectories}")
 
         self.observation_dim = 5
         self.action_dim = 3  # 动作维度为3维，包括方位角、俯仰角、焦距
@@ -90,9 +90,7 @@ class BaseEnv(gym.Env):
     def reset(self):
         # Generate the trajectory
         selected_index = np.random.randint(len(self.__trajectory_files))
-        with open(self.__trajectory_files[selected_index], "r") as file:
-            data = json.load(file)
-        self.__trajectory = data["UAV"]
+        self.load_trajectory(self.__trajectory_files[selected_index])
         self.__uav_var_count = len(self.__trajectory)
         
         self.__current_t = 0
@@ -104,16 +102,23 @@ class BaseEnv(gym.Env):
 
         self.shared_data.velocity = 25  # 新增：重置速度为max_speed
         self.shared_data.acceleration = 0  # 新增：重置加速度为0
+        
+        self.__update_uav_info(0)
+    
+    def load_trajectory(self, path_to_trajectory):
+        with open(path_to_trajectory, "r") as file:
+            data = json.load(file)
+        self.__trajectory = data["UAV"]
     
     def update_env(self, action):
-        self.__current_t += 1
+        self.__current_t += 1           # TODO:
         
         self.__update_defender_info(action)
-        self.__update_uav_info()
+        self.__update_uav_info(self.__current_t)
          
     def is_done(self):
         "Return `true` if we reach to the end of this episode."
-        return self.__current_t >= self.__uav_var_count
+        return self.__current_t >= self.__uav_var_count - 1
     
     def get_capture_state(self):
         
@@ -154,8 +159,7 @@ class BaseEnv(gym.Env):
         self.defender_elevation_low = elevation - half_fov_adjusted_vertical
         self.defender_elevation_high = elevation + half_fov_adjusted_vertical
         
-    def __update_uav_info(self):
-        current_frame = self.get_current_frame()
+    def __update_uav_info(self, current_frame):
         x, y, z = self.__trajectory[current_frame]
         
         # 计算目标相对于相机的位置矢量
@@ -195,6 +199,8 @@ class BaseEnv(gym.Env):
         return state
 class CameraControlEnv(BaseEnv):
     def __init__(self, path_to_trajectories:str):
+        if path_to_trajectories is None:
+            raise RuntimeError
         super().__init__(path_to_trajectories)
 
         # 定义连续动作空间，例如控制相机方位角、俯仰角和焦距的连续值
@@ -243,57 +249,33 @@ class CameraControlEnv(BaseEnv):
         elevation = self.shared_data.elevation
         focal_length = self.shared_data.focal_length
 
-        self.shared_data.gud_e = self.shared_data.gud_e
-        self.shared_data.gud_a = self.shared_data.gud_a
         # print(f"{self.gud_a, self.gud_e, azimuth_deg, elevation_deg}")
 
-        # 逐步逼近奖励
-        azimuth_diff1 = np.abs(azimuth - self.shared_data.gud_a)
-        elevation_diff1 = np.abs(elevation - self.shared_data.gud_e)
-        if azimuth_diff1 <= 5 and elevation_diff1 <= 5:
-            # print('correct', end=' ')
-            reward0 = 0
-        else:
-            # print('false', end=' ')
-            reward0 = 0
+        # # 逐步逼近奖励
+        # azimuth_diff1 = np.abs(azimuth - self.shared_data.gud_a)
+        # elevation_diff1 = np.abs(elevation - self.shared_data.gud_e)
+        # if azimuth_diff1 <= 5 and elevation_diff1 <= 5:
+        #     # print('correct', end=' ')
+        #     reward0 = 1
+        # else:
+        #     # print('false', end=' ')
+        #     reward0 = -100# -((azimuth_diff1 - 5) + (elevation_diff1 - 5))
             
         capture_state = self.get_capture_state()
-
-        if focal_length == 0.0043:
-            reward2 = 1
-        else:
-            reward2 = 0
 
         # 辨认奖励的计算
         if (capture_state == CaptureState.identifying_target):
             # 辨认目标
-            # print('indentification')
-            # print(f"{a1, a2, azimuth_deg}")
-            reward1 = 100
-            self.trigger_condition = True
-            reward = reward0 + reward1 + reward2
-            return reward, reward1
+            return 100000
         elif (capture_state == CaptureState.recognizing_target):
             # 识别目标
-            # print('recognition')
-            # print(f"{a1, a2, azimuth_deg}")
-            reward1 = 50
-            reward = reward0 + reward1 + reward2
-            return reward, reward1
+            return 50
         elif (capture_state == CaptureState.detecting_target):
             # 探测目标
-            # print('detection')
-            # print(f"{a1, a2, azimuth_deg}")
-            reward1 = 20
-            reward = reward0 + reward1 + reward2
-            return reward, reward1
+            return 20
         elif(capture_state == CaptureState.out_of_focal):
-            reward1 = 0
-            reward = reward0 + reward1 + reward2
-            return reward, reward1
+            return 3
         elif(capture_state == CaptureState.out_of_horizontal_or_vertial):
-            reward1 = 0
-            reward = reward0 + reward1 + reward2
-            return reward, reward1
+            return -100
         else:
             raise NotImplementedError
