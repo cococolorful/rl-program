@@ -11,7 +11,7 @@ log_dir = 'logs'  # Tensorboard日志目录
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 创建相机控制环境
-env = CameraControlEnv()
+env = CameraControlEnv(path_to_trajectories="trajectories")
 
 # SAC算法的参数
 state_dim = env.observation_space.shape[0]  # 观察空间为5维
@@ -95,6 +95,7 @@ for episode in range(max_episodes):
         agent.buffer.push(observation, action, reward, next_observation, done)
         total_reward += reward
 
+        observation = next_observation
         # SAC算法中的训练步骤
         qf1_loss, qf2_loss, policy_loss, alpha_loss, alpha = agent.update_parameters(agent.buffer, 1024, updates)
         updates += 1  # 每次更新后递增更新次数

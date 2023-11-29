@@ -52,14 +52,12 @@ defender_var_count = len(defender_data)
 #print(defender_data)
 
 # 循环与代理交互并手动输入经验
-state = env.reset()
+observation = env.reset()
 total_reward = 0
 done = False
 n = 0
 
 while not done:
-    azimuth, elevation, focal_length, gud_a, gud_e, v, a, x, y, z, current_t = state
-    observation = state[:5]
 
     if n < defender_var_count - 1:
         action = [defender_data[n + 1][i] - defender_data[n][i] for i in range(len(defender_data[0]))]
@@ -69,14 +67,12 @@ while not done:
         action = [0, 0, 0]
     #print(action)
 
-    next_state, reward, done, _ = env.step(action)
+    next_observation, reward, done, _ = env.step(action)
     # 打印获得的奖励
     # print(f"Reward: {reward}")
-    next_observation = next_state[:5]
     agent.buffer.push(observation, action, reward, next_observation, done)
     # print(f"{len(agent.buffer)}")
     # 保存 Replay Buffer
-    state = next_state
     total_reward += reward
     
 print(f"Total Reward: {total_reward}")
