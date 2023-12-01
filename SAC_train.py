@@ -23,8 +23,8 @@ sac_args = {
     'gamma': 0.99,  # 折扣率，控制未来奖励的重要性0.99
     'tau': 0.005,  # 软更新参数，控制目标网络的平滑更新
     'alpha': 0.4,  # 熵调节参数，控制策略的探索程度0.2
-    'policy': 'Deterministic',  # 策略类型，可以是Gaussian或Deterministic策略
-    'target_update_interval': 10,  # 目标网络更新的频率
+    'policy': 'Gaussian',  # 策略类型，可以是Gaussian或Deterministic策略
+    'target_update_interval': 1,  # 目标网络更新的频率
     'automatic_entropy_tuning': True,  # 是否自动调节熵参数
     'cuda': True,
     'hidden_size': 1024,  # Critic和Actor网络的隐藏层大小
@@ -34,7 +34,7 @@ sac_args = {
 }
 
 # 在这里初始化SAC代理
-agent = SAC(state_dim, env.action_space, sac_args)
+agent = SAC(2, 2, sac_args)
 
 # 检查是否有预训练的模型参数
 #pretrained_model_directory = 'sac_model'
@@ -69,16 +69,14 @@ initial_buffer_size = 512
 updates = 0
 
 while len(agent.buffer) < initial_buffer_size:
-    state = env.reset()
+    observation = env.reset()
     done = False
 
     while not done:
-        observation = state[:5]
         action = env.action_space.sample()  # 随机动作，用于填充缓冲区
-        next_state, reward, done, _ = env.step(action)
-        next_observation = next_state[:5]
+        next_observation, reward, done, _ = env.step(action)
         agent.buffer.push(observation, action, reward, next_observation, done)
-        state = next_state
+        observation = next_observation
 
 print(f"Initial buffer size: {len(agent.buffer)}")
 
@@ -97,8 +95,9 @@ for episode in range(max_episodes):
 
         observation = next_observation
         # SAC算法中的训练步骤
-        qf1_loss, qf2_loss, policy_loss, alpha_loss, alpha = agent.update_parameters(agent.buffer, 1024, updates)
-        updates += 1  # 每次更新后递增更新次数
+        for i in range(3):
+            agent.update_parameters(agent.buffer, 1024, updates)
+            updates += 1  # 每次更新后递增更新次数
 
     episode_rewards.append(total_reward)
     print(f"Episode: {episode + 1}, Total Reward: {total_reward}")

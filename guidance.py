@@ -1,8 +1,8 @@
 import random
 
 def gd(ele, azi):
-    angle_offset1 = 5 * random.uniform(0, 1)
-    angle_offset2 = 3 * random.uniform(0, 1)
+    angle_offset1 = 0 # 5 * random.uniform(0, 1)
+    angle_offset2 = 0 # 3 * random.uniform(0, 1)
     azimuth = angle_offset1 + azi
     azimuth = round(azimuth, 2)
     elevation = angle_offset2 + ele

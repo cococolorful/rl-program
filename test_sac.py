@@ -55,7 +55,7 @@ agent = SAC(state_dim, env.action_space, sac_args)
 
 # 定义目录路径以加载模型参数
 load_dir = 'sac_model'
-load_episode = 3000  # 你想加载的训练轮次对应的模型参数
+load_episode = 1000  # 你想加载的训练轮次对应的模型参数
 
 # 加载模型参数
 agent.load_model(load_dir, 'sac', load_episode, evaluate=True)

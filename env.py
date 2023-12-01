@@ -74,7 +74,7 @@ class BaseEnv(gym.Env):
             dtype=np.float32
         )
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(self.observation_dim,), dtype=np.float32
+            low=-1, high=1, shape=(self.observation_dim,), dtype=np.float32
         )
         
         self.shared_data = SharedData()
@@ -184,11 +184,11 @@ class BaseEnv(gym.Env):
     def __get_state(self):
         # print(f"{self.x, self.y, self.z}")
         state = np.array([
-            self.shared_data.azimuth,
-            self.shared_data.elevation,
-            self.shared_data.focal_length,
-            self.shared_data.gud_a,  # 新增：gud_a
-            self.shared_data.gud_e,  # 新增：gud_e
+            self.shared_data.azimuth / 180,
+            self.shared_data.elevation / 90,
+            ((self.shared_data.focal_length - 0.0043) / (0.129 - 0.0043) -0.5) * 2,
+            self.shared_data.gud_a / 180,  # 新增：gud_a
+            self.shared_data.gud_e / 90,  # 新增：gud_e
             self.shared_data.velocity,  # 新增：速度
             self.shared_data.acceleration,  # 新增：加速度
             self.__x,           
@@ -229,9 +229,9 @@ class CameraControlEnv(BaseEnv):
     def step(self, action):
         self.update_env(action)
         
-        reward, reward1 = self.calculate_reward()
+        reward = self.calculate_reward()
         obs = self.get_observation()
-        done = self.is_done() or reward1 == 100
+        done = self.is_done() or reward == 100
         # print(f"{self.current_t, done}")
         if self.trigger_condition:
             reward += self.reward_compensation
@@ -250,7 +250,7 @@ class CameraControlEnv(BaseEnv):
         focal_length = self.shared_data.focal_length
 
         # print(f"{self.gud_a, self.gud_e, azimuth_deg, elevation_deg}")
-
+        gud_a,gud_e = self.shared_data.gud_a,self.shared_data.gud_e
         # # 逐步逼近奖励
         # azimuth_diff1 = np.abs(azimuth - self.shared_data.gud_a)
         # elevation_diff1 = np.abs(elevation - self.shared_data.gud_e)
@@ -260,7 +260,13 @@ class CameraControlEnv(BaseEnv):
         # else:
         #     # print('false', end=' ')
         #     reward0 = -100# -((azimuth_diff1 - 5) + (elevation_diff1 - 5))
-            
+        uav_dir = np.array([np.sin(gud_e) * np.cos(gud_a),
+                            np.sin(gud_e) * np.sin(gud_a),
+                            np.cos(gud_e)])
+        defender_dir = np.array([np.sin(elevation) * np.cos(azimuth),
+                            np.sin(elevation) * np.sin(azimuth),
+                            np.cos(elevation)])
+        
         capture_state = self.get_capture_state()
 
         # 辨认奖励的计算
@@ -276,6 +282,6 @@ class CameraControlEnv(BaseEnv):
         elif(capture_state == CaptureState.out_of_focal):
             return 3
         elif(capture_state == CaptureState.out_of_horizontal_or_vertial):
-            return -100
+            return -(uav_dir*defender_dir).sum()
         else:
             raise NotImplementedError

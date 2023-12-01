@@ -5,7 +5,7 @@ import json
 import os
 
 # 创建相机控制环境
-env = CameraControlEnv()
+env = CameraControlEnv("trajectories")
 
 # SAC算法的参数
 state_dim = env.observation_space.shape[0]  # 观察空间为5维
@@ -33,11 +33,11 @@ agent = SAC(state_dim, env.action_space, sac_args)
 buffer_save_path = 'checkpoints/sac_buffer_camera_control_.pkl'
 
 # 尝试加载 Replay Buffer
-if os.path.exists(buffer_save_path):
-    print(f"Loading Replay Buffer from {buffer_save_path}...")
-    agent.buffer.load_buffer(buffer_save_path)
-else:
-    print("No saved Replay Buffer found. Starting with an empty buffer.")
+# if os.path.exists(buffer_save_path):
+#     print(f"Loading Replay Buffer from {buffer_save_path}...")
+#     agent.buffer.load_buffer(buffer_save_path)
+# else:
+#     print("No saved Replay Buffer found. Starting with an empty buffer.")
 
 # 构建文件的绝对路径
 file_path = 'tmpkw.json'
@@ -53,6 +53,8 @@ defender_var_count = len(defender_data)
 
 # 循环与代理交互并手动输入经验
 observation = env.reset()
+observation = env.load_trajectory(file_path)
+
 total_reward = 0
 done = False
 n = 0
@@ -70,7 +72,9 @@ while not done:
     next_observation, reward, done, _ = env.step(action)
     # 打印获得的奖励
     # print(f"Reward: {reward}")
-    agent.buffer.push(observation, action, reward, next_observation, done)
+    if observation is not None:
+        agent.buffer.push(observation, action, reward, next_observation, done)
+    observation = next_observation
     # print(f"{len(agent.buffer)}")
     # 保存 Replay Buffer
     total_reward += reward

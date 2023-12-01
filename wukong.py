@@ -16,7 +16,9 @@ class AtariEnv(BaseEnv):
         self._cfg = cfg
         self._init_flag = False
         self._replay_path = None
-
+        
+        self.reset()
+        
     def reset(self) -> np.ndarray:
         if not self._init_flag:
             self._env = self._make_env()
@@ -59,12 +61,7 @@ class AtariEnv(BaseEnv):
         assert isinstance(action, np.ndarray), type(action)
 
         obs, rew, done, info = self._env.step(action)
-        # self._env.render()
-        self._eval_episode_return += rew
-        obs = to_ndarray(obs).astype(np.float32)
-        rew = to_ndarray([rew]).astype(np.float32)  # wrapped to be transferred to a Tensor with shape (1,)
-        if done:
-            info['eval_episode_return'] = self._eval_episode_return
+        
         return BaseEnvTimestep(obs, rew, done, info)
 
     def enable_save_replay(self, replay_path: Optional[str] = None) -> None:
@@ -90,7 +87,7 @@ class AtariEnv(BaseEnv):
         return self._reward_space
 
     def _make_env(self):
-        return CameraControlEnv()
+        return CameraControlEnv("trajectories")
 
     def __repr__(self) -> str:
         return "DI-engine Atari Env({})".format(self._cfg.env_id)
@@ -117,43 +114,68 @@ from ding.envs import BaseEnvManagerV2, SubprocessEnvManagerV2
 from ding.data import DequeBuffer
 from ding.config import compile_config
 from ding.framework import task, ding_init
-from ding.framework.context import OnlineRLContext
+from ding.framework.context import OnlineRLContext,OfflineRLContext
 from ding.framework.middleware import data_pusher, StepCollector, interaction_evaluator, \
     CkptSaver, OffPolicyLearner, termination_checker, online_logger
 from ding.utils import set_pkg_seed
+from ding.worker import BaseLearner, SampleSerialCollector, InteractionSerialEvaluator, AdvancedReplayBuffer
 from dizoo.classic_control.pendulum.envs.pendulum_env import PendulumEnv
 from wukong_config import main_config, create_config
+import torch
+from ding.envs import BaseEnvManager, DingEnvWrapper,SyncSubprocessEnvManager,AsyncSubprocessEnvManager
+from easydict import EasyDict
 
-
-def main():
+    
+def main(eval_only:bool = False):
     logging.getLogger().setLevel(logging.INFO)
     cfg = compile_config(main_config, create_cfg=create_config, auto=True)
     ding_init(cfg)
-    with task.start(async_mode=False, ctx=OnlineRLContext()):
+    
+
+    set_pkg_seed(cfg.seed, use_cuda=cfg.policy.cuda)
+
+    model = QAC(**cfg.policy.model)
+    buffer_ = DequeBuffer(size=cfg.policy.other.replay_buffer.replay_buffer_size)
+    policy = SACPolicy(cfg.policy, model=model)
+    
+    buffer_.push()
+    
+    if eval_only:
+        evaluator_env = BaseEnvManager(env_fn=[lambda : DingEnvWrapper(
+            AtariEnv(cfg.env),
+            EasyDict(env_wrapper='default'),
+        ) for _ in range(cfg.env.evaluator_env_num)], cfg=cfg.env.manager)
+            
+        policy.eval_mode.load_state_dict(torch.load(cfg.policy.load_path, map_location='cpu'))
+        evaluator = InteractionSerialEvaluator(
+            cfg.policy.eval.evaluator, evaluator_env, policy.eval_mode, exp_name=cfg.exp_name
+        )
+        evaluator.eval()
+    else:
         collector_env = BaseEnvManagerV2(
-            env_fn=[lambda: AtariEnv(cfg.env) for _ in range(cfg.env.collector_env_num)], cfg=cfg.env.manager
+            env_fn=[lambda : DingEnvWrapper(
+            AtariEnv(cfg.env),
+            EasyDict(env_wrapper='default'),) for _ in range(cfg.env.collector_env_num)], cfg=cfg.env.manager
         )
         evaluator_env = BaseEnvManagerV2(
-            env_fn=[lambda: AtariEnv(cfg.env) for _ in range(cfg.env.evaluator_env_num)], cfg=cfg.env.manager
+            env_fn=[lambda : DingEnvWrapper(
+            AtariEnv(cfg.env),
+            EasyDict(env_wrapper='default'),) for _ in range(cfg.env.evaluator_env_num)], cfg=cfg.env.manager
         )
-
-        set_pkg_seed(cfg.seed, use_cuda=cfg.policy.cuda)
-
-        model = QAC(**cfg.policy.model)
-        buffer_ = DequeBuffer(size=cfg.policy.other.replay_buffer.replay_buffer_size)
-        policy = SACPolicy(cfg.policy, model=model)
-
-        task.use(interaction_evaluator(cfg, policy.eval_mode, evaluator_env))
-        task.use(
-            StepCollector(cfg, policy.collect_mode, collector_env, random_collect_size=cfg.policy.random_collect_size)
-        )
-        task.use(data_pusher(cfg, buffer_))
-        task.use(OffPolicyLearner(cfg, policy.learn_mode, buffer_))
-        task.use(CkptSaver(policy, cfg.exp_name, train_freq=100))
-        task.use(termination_checker(max_train_iter=10000))
-        task.use(online_logger())
-        task.run()
+    
+        with task.start(async_mode=False, ctx=OnlineRLContext()):    
+            task.use(interaction_evaluator(cfg, policy.eval_mode, evaluator_env))
+            task.use(
+                StepCollector(cfg, policy.collect_mode, collector_env, random_collect_size=cfg.policy.random_collect_size)
+            )
+            task.use(data_pusher(cfg, buffer_))
+            task.use(OffPolicyLearner(cfg, policy.learn_mode, buffer_))
+            task.use(CkptSaver(policy, cfg.exp_name, train_freq=100_000))
+            task.use(termination_checker(max_train_iter=cfg.env.stop_value))
+            task.use(online_logger())
+            task.run()
 
 
 if __name__ == "__main__":
-    main()
+    main(eval_only=False)
+    main(eval_only=True)

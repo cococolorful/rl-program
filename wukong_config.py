@@ -1,17 +1,26 @@
 from easydict import EasyDict
 
 pendulum_sac_config = dict(
-    exp_name='tmp/pendulum_sac_seed0',
+    exp_name='tmp/wk2',
     env=dict(
         collector_env_num=10,
         evaluator_env_num=5,
         n_evaluator_episode=5,
-        stop_value=100000,
+        stop_value=10000000,
+        # manager=dict(
+        #         shared_memory=False,
+        #         copy_on_get=True,
+        #         wait_num=float("inf"),
+        #         max_retry=2,
+        #         context='spawn',
+        #         # step_wait_timeout=None,
+        #     ),
     ),
     policy=dict(
         cuda=True,
         priority=False,
         random_collect_size=1000,
+        load_path='tmp/wk/ckpt/eval.pth.tar',
         model=dict(
             obs_shape=5,
             action_shape=3,
