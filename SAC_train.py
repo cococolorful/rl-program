@@ -34,8 +34,11 @@ sac_args = {
 }
 
 # 在这里初始化SAC代理
-agent = SAC(2, 2, sac_args)
-
+agent = SAC(state_dim, env.action_space, sac_args)
+from stable_baselines3 import PPO
+model = PPO("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=10_000)
+model.learn(total_timesteps=10_000)
 # 检查是否有预训练的模型参数
 #pretrained_model_directory = 'sac_model'
 #pretrained_model_episode = 1000   # 将这个 episode 修改为你想加载的模型参数的 episode
