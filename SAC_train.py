@@ -2,6 +2,7 @@ import torch
 import os
 from SAC import SAC  # SAC类是你提供的SAC算法实现
 from env import CameraControlEnv  # CameraControlEnv是你的自定义环境
+from env_gpu import CameraControlEnv  # CameraControlEnv是你的自定义环境
 
 # 创建一个Tensorboard写入器
 log_dir = 'logs'  # Tensorboard日志目录
@@ -9,8 +10,9 @@ log_dir = 'logs'  # Tensorboard日志目录
 # 检查是否可用GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+batch_size = 1024
 # 创建相机控制环境
-env = CameraControlEnv()
+env = CameraControlEnv(num_envs=batch_size)
 
 # SAC算法的参数
 state_dim = env.observation_space.shape[0]  # 观察空间为5维
@@ -79,29 +81,32 @@ while len(agent.buffer) < initial_buffer_size:
 print(f"Initial buffer size: {len(agent.buffer)}")
 
 for episode in range(max_episodes):
-    state = env.reset()
-    total_reward = 0
-    done = False
-
-    while not done:
-        observation = state[:5]
+    observation = env.reset()
+    # total_reward = 0
+    # done = False
+    total_reward = torch.zeros((batch_size,1),device="cuda")
+    for _ in range(1000):
         #print(observation)
 
         action = agent.select_action(observation)
         #print(action)
         
-        next_state, reward, done, _ = env.step(action)
-        next_observation = next_state[:5]
-        agent.buffer.push(observation, action, reward, next_observation, done)
-        state = next_state
+        next_obs, reward, done, _ = env.step(action)
+        # next_observation = next_state[:5]
+        # agent.buffer.push(observation, action, reward, next_observation, done)
         total_reward += reward
+        on_policy_memory = (observation, action, reward, next_obs, done)
+        observation = next_obs
 
         # SAC算法中的训练步骤
-        qf1_loss, qf2_loss, policy_loss, alpha_loss, alpha = agent.update_parameters(agent.buffer, 256, updates)
+        # qf1_loss, qf2_loss, policy_loss, alpha_loss, alpha = agent.update_parameters(on_policy_memory, updates)
+        agent.update_parameters(on_policy_memory, updates)
         updates += 1  # 每次更新后递增更新次数
 
-    episode_rewards.append(total_reward)
-    print(f"Episode: {episode + 1}, Total Reward: {total_reward}")
+    mean_reward = total_reward.mean()
+    std_reward = total_reward.var()
+    # episode_rewards.append(total_reward.mean())
+    print(f"Episode: {episode + 1}, mean Reward: {mean_reward}, std reward{std_reward}")
 
 # 关闭环境
 env.close()
